@@ -1,7 +1,9 @@
-name: Post Test Message
+name: Post Deals
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
 
 jobs:
   run-script:
