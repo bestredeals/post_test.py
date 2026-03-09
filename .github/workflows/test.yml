@@ -2,8 +2,6 @@ name: Post Deals
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/30 * * * *"
 
 jobs:
   run-script:
@@ -16,7 +14,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: pip install requests
+      - run: pip install requests beautifulsoup4
 
       - name: Run script
         env:
