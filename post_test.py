@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -29,33 +30,55 @@ def make_affiliate_link(url):
     separator = "&" if "?" in url else "?"
     return f"{url}{separator}tag={AFFILIATE_TAG}"
 
+def normalize_product_url(href):
+    full_url = urljoin("https://www.amazon.com", href)
+
+    # Keep only real product URLs with ASINs
+    match = re.search(r"/dp/([A-Z0-9]{10})", full_url)
+    if match:
+        asin = match.group(1)
+        return f"https://www.amazon.com/dp/{asin}"
+
+    match = re.search(r"/gp/product/([A-Z0-9]{10})", full_url)
+    if match:
+        asin = match.group(1)
+        return f"https://www.amazon.com/dp/{asin}"
+
+    return None
+
 response = requests.get(AMAZON_DEALS_URL, headers=HEADERS, timeout=30)
 response.raise_for_status()
 
 soup = BeautifulSoup(response.text, "html.parser")
-
 links = soup.find_all("a", href=True)
 
 posted = 0
 seen = set()
 
+BAD_TEXT = {
+    "all", "cart", "returns", "registry", "prime", "customer service",
+    "gift cards", "sell", "today's deals"
+}
+
 for a in links:
     href = a["href"]
+    title = a.get_text(" ", strip=True)
 
-    if "/dp/" not in href and "/gp/" not in href:
-        continue
-
-    full_url = urljoin("https://www.amazon.com", href)
-
-    if full_url in seen:
-        continue
-    seen.add(full_url)
-
-    title = a.get_text(strip=True)
     if not title:
-        title = "Amazon Deal"
+        continue
 
-    affiliate_link = make_affiliate_link(full_url)
+    if title.lower() in BAD_TEXT:
+        continue
+
+    product_url = normalize_product_url(href)
+    if not product_url:
+        continue
+
+    if product_url in seen:
+        continue
+    seen.add(product_url)
+
+    affiliate_link = make_affiliate_link(product_url)
 
     message = f"""🔥 DEAL ALERT
 
@@ -72,4 +95,4 @@ Grab it here:
         break
 
 if posted == 0:
-    send_message("No Amazon product links found on the deals page right now.")
+    send_message("No product deals found right now.")
