@@ -1,13 +1,17 @@
 import os
 import requests
-import xml.etree.ElementTree as ET
-from urllib.parse import urlparse, parse_qs
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = "@bestredeals"
 AFFILIATE_TAG = "sherifaly-20"
 
-RSS_URL = "https://slickdeals.net/newsearch.php?mode=frontpage&searcharea=deals&rss=1"
+AMAZON_DEALS_URL = "https://www.amazon.com/gp/goldbox"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
 
 def send_message(text):
     response = requests.post(
@@ -18,48 +22,40 @@ def send_message(text):
         },
         timeout=30
     )
+    print(response.status_code, response.text)
     response.raise_for_status()
-
-def extract_amazon_url(url):
-    parsed = urlparse(url)
-    query = parse_qs(parsed.query)
-
-    # Some deal links may contain a real target URL in query params
-    for key in ["url", "u", "redirect", "redirectUrl"]:
-        if key in query and query[key]:
-            candidate = query[key][0]
-            if "amazon.com" in candidate:
-                return candidate
-
-    if "amazon.com" in url:
-        return url
-
-    return None
 
 def make_affiliate_link(url):
     separator = "&" if "?" in url else "?"
     return f"{url}{separator}tag={AFFILIATE_TAG}"
 
-rss = requests.get(RSS_URL, timeout=30)
-rss.raise_for_status()
+response = requests.get(AMAZON_DEALS_URL, headers=HEADERS, timeout=30)
+response.raise_for_status()
 
-root = ET.fromstring(rss.content)
-items = root.findall(".//item")
+soup = BeautifulSoup(response.text, "html.parser")
+
+links = soup.find_all("a", href=True)
 
 posted = 0
+seen = set()
 
-for item in items:
-    title = item.findtext("title", default="Deal")
-    link = item.findtext("link", default="")
+for a in links:
+    href = a["href"]
 
-    if "amazon" not in title.lower() and "amazon" not in link.lower():
+    if "/dp/" not in href and "/gp/" not in href:
         continue
 
-    amazon_url = extract_amazon_url(link)
-    if not amazon_url:
-        continue
+    full_url = urljoin("https://www.amazon.com", href)
 
-    affiliate_link = make_affiliate_link(amazon_url)
+    if full_url in seen:
+        continue
+    seen.add(full_url)
+
+    title = a.get_text(strip=True)
+    if not title:
+        title = "Amazon Deal"
+
+    affiliate_link = make_affiliate_link(full_url)
 
     message = f"""🔥 DEAL ALERT
 
@@ -76,4 +72,4 @@ Grab it here:
         break
 
 if posted == 0:
-    send_message("No Amazon deals found right now.")
+    send_message("No Amazon product links found on the deals page right now.")
